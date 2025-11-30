@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background Circle: Teal/Dark Green -->
+  <circle cx="256" cy="256" r="256" fill="#115e59"/>
+  
+  <!-- Decorative Gear (Background) -->
+  <g transform="translate(360, 140)" opacity="0.3">
+    <circle r="80" fill="none" stroke="white" stroke-width="30"/>
+    <path d="M0 -100 v40 M0 60 v40 M100 0 h-40 M-60 0 h-40 M70 70 l-28 -28 M-42 -42 l-28 -28 M70 -70 l-28 28 M-42 42 l-28 28" stroke="white" stroke-width="30" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Decorative Gear (Bottom) -->
+  <g transform="translate(380, 380)" opacity="0.3">
+    <circle r="60" fill="none" stroke="white" stroke-width="25"/>
+    <path d="M0 -80 v30 M0 50 v30 M80 0 h-30 M-50 0 h-30 M56 56 l-21 -21 M-35 -35 l-21 -21 M56 -56 l-21 21 M-35 35 l-21 21" stroke="white" stroke-width="25" stroke-linecap="round"/>
+  </g>
+
+  <!-- Main Clock Icon -->
+  <g transform="translate(230, 256)">
+    <!-- Clock Face -->
+    <circle r="150" fill="#115e59" stroke="white" stroke-width="25"/>
+    
+    <!-- Hour Marks -->
+    <path d="M0 -130 v20 M0 110 v20 M130 0 h-20 M-130 0 h20" stroke="white" stroke-width="15" stroke-linecap="round"/>
+    
+    <!-- Hands -->
+    <path d="M0 0 v-80" stroke="white" stroke-width="25" stroke-linecap="round"/>
+    <path d="M0 0 l60 60" stroke="white" stroke-width="25" stroke-linecap="round"/>
+    
+    <!-- Center Dot -->
+    <circle r="12" fill="white"/>
+  </g>
+</svg>
