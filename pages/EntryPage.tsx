@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTimeEntries, useSettings, useDailyLogs, useAbsences, useInstallers, usePeerReviews, getLocalISOString } from '../services/dataService';
 import { GlassCard, GlassInput, GlassButton } from '../components/GlassCard';
 import GlassDatePicker from '../components/GlassDatePicker';
-import { Clock, Briefcase, CalendarDays, Coffee, Plus, Trash2, ChevronDown, ChevronUp, ArrowRight, MessageSquareText, StickyNote, Building2, Warehouse, Car, Building, Palmtree, Stethoscope, PartyPopper, Ban, X, TrendingDown, Play, Square, AlertCircle, UserCheck, Check, UserPlus, RefreshCw, User } from 'lucide-react';
+import { Clock, Briefcase, CalendarDays, Coffee, Plus, Trash2, ChevronDown, ChevronUp, ArrowRight, MessageSquareText, StickyNote, Building2, Warehouse, Car, Building, Palmtree, Stethoscope, PartyPopper, Ban, X, TrendingDown, Play, Square, AlertCircle, UserCheck, Check, UserPlus, RefreshCw, User, ArrowLeftRight } from 'lucide-react';
 import { TimeSegment } from '../types';
 
 // Zentrale Konfiguration für das Modal (Icons & Farben)
@@ -631,7 +631,7 @@ const EntryPage: React.FC = () => {
                             className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors hover:bg-white/10`}
                             title="Typ ändern (gedrückt halten für Menü)"
                         >
-                            <Plus size={24} />
+                            <ArrowLeftRight size={24} />
                         </button>
                     </div>
 
