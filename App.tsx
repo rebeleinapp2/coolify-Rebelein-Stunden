@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage';
 import AuthPage from './pages/AuthPage';
 import OfficeDashboard from './pages/OfficeDashboard';
 import OfficeUserPage from './pages/OfficeUserPage';
+import AdvancedAnalysisPage from './pages/AdvancedAnalysisPage';
 import { UpdateNotification } from './components/UpdateNotification';
 
 // Wrapper component to handle route changes for SW updates
@@ -149,8 +150,9 @@ const App: React.FC = () => {
             
             {/* Office Routes */}
             <Route path="/office" element={<OfficeDashboard />} />
-            <Route path="/office/users" element={<OfficeDashboard />} /> {/* Reuse Dashboard as List View for now */}
+            <Route path="/office/users" element={<OfficeDashboard />} /> 
             <Route path="/office/user/:userId" element={<OfficeUserPage />} />
+            <Route path="/office/analysis" element={<AdvancedAnalysisPage />} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

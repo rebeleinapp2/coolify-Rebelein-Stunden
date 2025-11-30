@@ -27,6 +27,82 @@ export const getLocalISOString = (dateObj: Date = new Date()): string => {
 
 // --- Hooks ---
 
+export const useInstallers = () => {
+    const [installers, setInstallers] = useState<UserSettings[]>([]);
+
+    useEffect(() => {
+        const fetchInstallers = async () => {
+            const { data } = await supabase
+                .from('user_settings')
+                .select('*')
+                .order('display_name');
+            
+            if (data) {
+                setInstallers(data as UserSettings[]);
+            }
+        };
+        fetchInstallers();
+    }, []);
+
+    return installers;
+};
+
+export const usePeerReviews = () => {
+    const [reviews, setReviews] = useState<TimeEntry[]>([]);
+    
+    const fetchReviews = useCallback(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Einträge, bei denen ICH als responsible eingetragen bin, aber noch NICHT bestätigt habe
+        const { data, error } = await supabase
+            .from('time_entries')
+            .select('*')
+            .eq('responsible_user_id', user.id)
+            .is('confirmed_at', null)
+            .order('date', { ascending: false });
+
+        if (error) console.error("Error fetching reviews", error);
+        else setReviews(data as TimeEntry[]);
+    }, []);
+
+    useEffect(() => {
+        fetchReviews();
+        // Realtime
+        const channel = supabase
+            .channel('realtime_reviews')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'time_entries' }, () => {
+                fetchReviews();
+            })
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [fetchReviews]);
+
+    const processReview = async (entryId: string, action: 'confirm' | 'reject', reason?: string) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        if (action === 'confirm') {
+            await supabase.from('time_entries').update({
+                confirmed_by: user.id,
+                confirmed_at: new Date().toISOString()
+            }).eq('id', entryId);
+        } else {
+            // Ablehnen: Verantwortlichkeit entfernen (zurück an Ersteller) und Notiz ergänzen
+            const { data: currentEntry } = await supabase.from('time_entries').select('note').eq('id', entryId).single();
+            const newNote = currentEntry?.note ? `${currentEntry.note} | Abgelehnt: ${reason}` : `Abgelehnt: ${reason}`;
+            
+            await supabase.from('time_entries').update({
+                responsible_user_id: null, // Entferne mich als Verantwortlichen
+                note: newNote
+            }).eq('id', entryId);
+        }
+        await fetchReviews();
+    };
+
+    return { reviews, processReview, fetchReviews };
+};
+
 export const useTimeEntries = (customUserId?: string) => {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,8 +115,6 @@ export const useTimeEntries = (customUserId?: string) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || (!user && !customUserId)) {
-        // Wenn kein User da ist und wir keinen spezifischen User ansehen wollen, brechen wir ab.
-        // Verhindert Fehler beim Abruf von "Nichts".
         setLoading(false);
         return;
     }
@@ -52,11 +126,8 @@ export const useTimeEntries = (customUserId?: string) => {
       .order('start_time', { ascending: true });
     
     if (customUserId) {
-        // Admin/Office viewing specific user
         query = query.eq('user_id', customUserId);
     } else if (user) {
-        // Personal view: Explicitly restrict to current user
-        // This prevents Admins/Office from seeing ALL entries in their personal history
         query = query.eq('user_id', user.id);
     }
 
@@ -68,9 +139,7 @@ export const useTimeEntries = (customUserId?: string) => {
       setEntries(data as TimeEntry[]);
     }
 
-    // Fetch locked days for this user
     let userToCheck = customUserId || user?.id;
-
     if (userToCheck) {
         const { data: locks } = await supabase.from('locked_days').select('date').eq('user_id', userToCheck);
         if (locks) setLockedDays(locks.map(l => l.date));
@@ -80,13 +149,11 @@ export const useTimeEntries = (customUserId?: string) => {
   }, [customUserId]);
 
   const addEntry = async (entry: Omit<TimeEntry, 'id' | 'created_at' | 'user_id'>) => {
-    // Check lock
     if (lockedDays.includes(entry.date)) {
         alert("Dieser Tag ist gesperrt und kann nicht bearbeitet werden.");
         return;
     }
 
-    // FIX: Determine correct user ID (Admin/Office mode vs Personal mode)
     const { data: { user } } = await supabase.auth.getUser();
     const targetUserId = customUserId || user?.id;
 
@@ -109,13 +176,11 @@ export const useTimeEntries = (customUserId?: string) => {
   };
 
   const updateEntry = async (id: string, updates: Partial<TimeEntry>) => {
-    // Check lock for the date of the entry
     const entry = entries.find(e => e.id === id);
     if (entry && lockedDays.includes(entry.date)) {
          alert("Dieser Tag ist gesperrt.");
          return;
     }
-    // Also check if moving to a locked date
     if (updates.date && lockedDays.includes(updates.date)) {
         alert("Ziel-Datum ist gesperrt.");
         return;
@@ -144,6 +209,7 @@ export const useTimeEntries = (customUserId?: string) => {
     const { error } = await supabase.from('time_entries').delete().eq('id', id);
     if (error) {
        console.error("Delete Error:", error.message || JSON.stringify(error));
+       alert("Löschen fehlgeschlagen: " + (error.message || "Unbekannter Fehler"));
     } else {
        await fetchEntries();
     }
@@ -166,7 +232,6 @@ export const useTimeEntries = (customUserId?: string) => {
     }
   }
 
-  // Admin Funktion: Eintrag bestätigen
   const confirmEntry = async (entryId: string) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -215,7 +280,6 @@ export const useDailyLogs = (customUserId?: string) => {
     if (customUserId) {
         query = query.eq('user_id', customUserId);
     } else if (user) {
-        // Explicitly restrict to current user for personal view
         query = query.eq('user_id', user.id);
     }
 
@@ -238,7 +302,6 @@ export const useDailyLogs = (customUserId?: string) => {
   }, [customUserId]);
 
   const saveDailyLog = useCallback(async (log: DailyLog) => {
-    // FIX: Determine correct user ID
     let targetUserId = customUserId;
     if (!targetUserId) {
         const { data: { user } } = await supabase.auth.getUser();
@@ -249,7 +312,6 @@ export const useDailyLogs = (customUserId?: string) => {
 
     const toDb = (val: string | undefined | null) => (!val || val === '') ? null : val;
 
-    // Optimistic update
     setDailyLogs(prev => {
       const existingIndex = prev.findIndex(l => l.date === log.date);
       if (existingIndex >= 0) {
@@ -292,18 +354,13 @@ export const useDailyLogs = (customUserId?: string) => {
 
   useEffect(() => {
     fetchDailyLogs();
-    
-    // Realtime subscription for Daily Logs
     const channel = supabase
       .channel('realtime_daily_logs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_logs' }, () => {
         fetchDailyLogs();
       })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [fetchDailyLogs]);
 
   return { dailyLogs, saveDailyLog, getLogForDate, loading, fetchDailyLogs };
@@ -356,27 +413,20 @@ export const useSettings = () => {
 
   useEffect(() => {
     fetchSettings();
-
-    // Realtime subscription for Settings
     const channel = supabase
       .channel('realtime_settings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_settings' }, () => {
         fetchSettings();
       })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [fetchSettings]);
 
   const updateSettings = async (newSettings: UserSettings) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: { message: 'Kein Benutzer angemeldet' } };
 
-    // Prevent local overwrite of locked settings
     if (settings.work_config_locked) {
-        // Restore locked values from current state before sending
         newSettings.target_hours = settings.target_hours;
         newSettings.work_config = settings.work_config;
     }
@@ -441,17 +491,13 @@ export const useAbsences = (customUserId?: string) => {
 
     useEffect(() => { 
         fetchAbsences(); 
-
         const channel = supabase
           .channel('realtime_absences')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'user_absences' }, () => {
             fetchAbsences();
           })
           .subscribe();
-
-        return () => {
-          supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [fetchAbsences]);
 
     const addAbsence = async (absence: Omit<UserAbsence, 'id' | 'user_id'> & { user_id?: string }) => {
@@ -475,56 +521,43 @@ export const useAbsences = (customUserId?: string) => {
         if (error) alert("Fehler beim Löschen: " + (error.message || JSON.stringify(error)));
     };
 
-    // Logik um einen einzelnen Tag aus einem (ggf. mehrtägigen) Abwesenheitszeitraum zu löschen
     const deleteAbsenceDay = async (dateStr: string, type: string) => {
-        // Suche den passenden Zeitraum
         const target = absences.find(a => 
             a.type === type && 
             a.start_date <= dateStr && 
             a.end_date >= dateStr
         );
         
-        if (!target) {
-            console.error("Abwesenheitseintrag nicht gefunden für Löschanfrage", dateStr, type);
-            return;
-        }
+        if (!target) return;
 
         const addDays = (d: string, days: number) => {
             const date = new Date(d);
             date.setDate(date.getDate() + days);
-            // Nutze getLocalISOString um UTC Probleme zu vermeiden
             return getLocalISOString(date);
         };
 
         try {
             if (target.start_date === target.end_date) {
-                // Fall 1: Eintrag ist nur ein Tag -> Komplett löschen
                 await deleteAbsence(target.id);
             } else if (target.start_date === dateStr) {
-                // Fall 2: Erster Tag wird gelöscht -> Startdatum + 1
                 const { error } = await supabase.from('user_absences').update({
                     start_date: addDays(dateStr, 1)
                 }).eq('id', target.id);
                 if (error) throw error;
                 await fetchAbsences();
             } else if (target.end_date === dateStr) {
-                // Fall 3: Letzter Tag wird gelöscht -> Enddatum - 1
                 const { error } = await supabase.from('user_absences').update({
                     end_date: addDays(dateStr, -1)
                 }).eq('id', target.id);
                 if (error) throw error;
                 await fetchAbsences();
             } else {
-                // Fall 4: Tag in der Mitte wird gelöscht -> Splitten
                 const originalEnd = target.end_date;
-                
-                // 1. Alten Eintrag verkürzen (bis gestern)
                 const { error: updateError } = await supabase.from('user_absences').update({
                     end_date: addDays(dateStr, -1)
                 }).eq('id', target.id);
                 if (updateError) throw updateError;
 
-                // 2. Neuen Eintrag erstellen (ab morgen bis Ende)
                 await addAbsence({
                     user_id: target.user_id,
                     type: target.type,
@@ -573,17 +606,13 @@ export const useVacationRequests = (customUserId?: string) => {
 
     useEffect(() => {
         fetchRequests();
-
         const channel = supabase
           .channel('realtime_requests')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'vacation_requests' }, () => {
             fetchRequests();
           })
           .subscribe();
-
-        return () => {
-          supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [fetchRequests]);
 
     const createRequest = async (start: string, end: string, note?: string) => {
@@ -610,7 +639,6 @@ export const useVacationRequests = (customUserId?: string) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Fetch admin's display name
         const { data: adminSettings } = await supabase
             .from('user_settings')
             .select('display_name')
@@ -619,7 +647,6 @@ export const useVacationRequests = (customUserId?: string) => {
 
         const adminName = adminSettings?.display_name || 'Admin';
 
-        // 1. Update status AND approval details
         const { error: updateError } = await supabase
             .from('vacation_requests')
             .update({ 
@@ -634,7 +661,6 @@ export const useVacationRequests = (customUserId?: string) => {
             return;
         }
 
-        // 2. Create actual vacation absence
         const { error: insertError } = await supabase.from('user_absences').insert({
             user_id: request.user_id,
             start_date: request.start_date,
@@ -659,12 +685,9 @@ export const useVacationRequests = (customUserId?: string) => {
     return { requests, createRequest, deleteRequest, approveRequest, rejectRequest, loading };
 };
 
-// --- OFFICE / ADMIN SERVICES ---
-
 export const useOfficeService = () => {
     const [users, setUsers] = useState<UserSettings[]>([]);
     
-    // Fetch all users (requires Office/Admin role)
     const fetchAllUsers = useCallback(async () => {
         const { data, error } = await supabase
             .from('user_settings')
@@ -676,23 +699,17 @@ export const useOfficeService = () => {
     }, []);
 
     useEffect(() => {
-        // Realtime subscription for User List updates (e.g. role changes, new users)
         const channel = supabase
             .channel('realtime_office_users')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'user_settings' }, () => {
                 fetchAllUsers();
             })
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [fetchAllUsers]);
 
-    // Update arbitrary user settings
     const updateOfficeUserSettings = async (userId: string, updates: Partial<UserSettings>) => {
         await supabase.from('user_settings').update(updates).eq('user_id', userId);
-        // Realtime will refresh the list
     }
 
     return { users, fetchAllUsers, updateOfficeUserSettings };

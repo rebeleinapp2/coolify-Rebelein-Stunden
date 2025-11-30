@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { PlusCircle, Calendar, PieChart, Settings, LogOut, LayoutDashboard, Users } from 'lucide-react';
+import { PlusCircle, Calendar, PieChart, Settings, LogOut, LayoutDashboard, Users, Presentation } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSettings } from '../services/dataService'; 
 
@@ -90,6 +91,7 @@ const BottomNav: React.FC = () => {
                         <>
                             <NavItem path="/office" icon={LayoutDashboard} label="Dashboard" colorClass="text-orange-400/70" />
                             <NavItem path="/office/users" icon={Users} label="Benutzer" colorClass="text-orange-400/70" />
+                            <NavItem path="/office/analysis" icon={Presentation} label="Profi-Auswertung" colorClass="text-purple-400/70" />
                         </>
                     )}
                 </div>

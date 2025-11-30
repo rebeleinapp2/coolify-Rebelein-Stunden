@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useTimeEntries, useSettings, useDailyLogs, useAbsences, getDailyTargetForDate, getLocalISOString } from '../services/dataService';
 import { GlassCard, GlassButton, GlassInput } from '../components/GlassCard';
-import { Trash2, FileDown, X, Edit2, Save, CalendarDays, Briefcase, Clock, ChevronLeft, ChevronRight, CheckCircle, Calendar, UserCheck, List, FileText, StickyNote, Coffee, Lock, Hourglass, Building2, Building, Warehouse, Car, Palmtree, Stethoscope, Ban, PartyPopper, TrendingDown } from 'lucide-react';
+import { Trash2, FileDown, X, Edit2, Save, CalendarDays, Briefcase, Clock, ChevronLeft, ChevronRight, CheckCircle, Calendar, UserCheck, List, FileText, StickyNote, Coffee, Lock, Hourglass, Building2, Building, Warehouse, Car, Palmtree, Stethoscope, Ban, PartyPopper, TrendingDown, AlertTriangle } from 'lucide-react';
 import GlassDatePicker from '../components/GlassDatePicker';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -29,6 +29,9 @@ const HistoryPage: React.FC = () => {
 
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [editForm, setEditForm] = useState({ date: '', client_name: '', hours: '', start_time: '', end_time: '', note: '' });
+
+  // NEU: State für das Löschen-Modal (statt window.confirm)
+  const [entryToDelete, setEntryToDelete] = useState<TimeEntry | null>(null);
 
   useEffect(() => {
     fetchDailyLogs();
@@ -257,6 +260,21 @@ const HistoryPage: React.FC = () => {
 
     await updateEntry(editingEntry.id, updates);
     setEditingEntry(null);
+  };
+
+  // --- Delete Logic (Modal based) ---
+  const handleDeleteClick = (entry: TimeEntry) => {
+      setEntryToDelete(entry);
+  };
+
+  const confirmDelete = async () => {
+      if (!entryToDelete) return;
+      if (entryToDelete.isAbsence) {
+          await deleteAbsenceDay(entryToDelete.date, entryToDelete.type!);
+      } else {
+          await deleteEntry(entryToDelete.id);
+      }
+      setEntryToDelete(null);
   };
 
   const getEntryIcon = (type: string | undefined) => {
@@ -752,16 +770,9 @@ const HistoryPage: React.FC = () => {
                                                             {!entry.isAbsence && (
                                                                 <button onClick={() => handleEditClick(entry)} className="p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-colors"><Edit2 size={14} /></button>
                                                             )}
+                                                            {/* HIER: Aufruf der neuen Lösch-Funktion statt confirm() */}
                                                             <button 
-                                                                onClick={() => { 
-                                                                    if(confirm('Löschen?')) {
-                                                                        if (entry.isAbsence) {
-                                                                            deleteAbsenceDay(entry.date, entry.type!);
-                                                                        } else {
-                                                                            deleteEntry(entry.id);
-                                                                        }
-                                                                    }
-                                                                }} 
+                                                                onClick={() => handleDeleteClick(entry)} 
                                                                 className="p-1.5 text-red-400/50 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                                             >
                                                                 <Trash2 size={14} />
@@ -881,6 +892,36 @@ const HistoryPage: React.FC = () => {
             </>
         )}
       </div>
+
+      {/* CONFIRMATION MODAL FOR DELETE */}
+      {entryToDelete && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <GlassCard className="w-full max-w-sm relative shadow-2xl border-red-500/30">
+                <div className="flex items-center gap-3 text-red-400 mb-4">
+                    <AlertTriangle size={28} />
+                    <h3 className="text-xl font-bold">Löschen bestätigen</h3>
+                </div>
+                <p className="text-white/80 mb-6">
+                    Möchtest du den Eintrag <strong>{entryToDelete.client_name}</strong> wirklich endgültig löschen?
+                </p>
+                <div className="flex gap-3">
+                    <GlassButton 
+                        onClick={() => setEntryToDelete(null)} 
+                        className="bg-white/10 hover:bg-white/20 border-white/10 text-white"
+                    >
+                        Abbrechen
+                    </GlassButton>
+                    <GlassButton 
+                        onClick={confirmDelete} 
+                        variant="danger"
+                        className="bg-red-500 hover:bg-red-600 border-red-500 text-white"
+                    >
+                        Löschen
+                    </GlassButton>
+                </div>
+            </GlassCard>
+        </div>
+      )}
 
       {showPdfModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm">

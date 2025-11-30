@@ -14,6 +14,7 @@ export interface TimeEntry {
   submitted?: boolean;
   confirmed_by?: string; // ID des Bestätigers
   confirmed_at?: string;
+  responsible_user_id?: string; // NEU: Für Peer-Reviews (Kollege bestätigt)
   isAbsence?: boolean; // Frontend-Flag zur Unterscheidung
 }
 

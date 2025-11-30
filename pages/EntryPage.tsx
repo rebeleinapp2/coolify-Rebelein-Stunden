@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useTimeEntries, useSettings, useDailyLogs, useAbsences, getLocalISOString } from '../services/dataService';
+import { useTimeEntries, useSettings, useDailyLogs, useAbsences, useInstallers, usePeerReviews, getLocalISOString } from '../services/dataService';
 import { GlassCard, GlassInput, GlassButton } from '../components/GlassCard';
 import GlassDatePicker from '../components/GlassDatePicker';
-import { Clock, Briefcase, CalendarDays, Coffee, Plus, Trash2, ChevronDown, ChevronUp, ArrowRight, MessageSquareText, StickyNote, Building2, Warehouse, Car, Building, Palmtree, Stethoscope, PartyPopper, Ban, X, TrendingDown, Play, Square } from 'lucide-react';
+import { Clock, Briefcase, CalendarDays, Coffee, Plus, Trash2, ChevronDown, ChevronUp, ArrowRight, MessageSquareText, StickyNote, Building2, Warehouse, Car, Building, Palmtree, Stethoscope, PartyPopper, Ban, X, TrendingDown, Play, Square, AlertCircle, UserCheck, Check, UserPlus, RefreshCw, User } from 'lucide-react';
 import { TimeSegment } from '../types';
 
 // Zentrale Konfiguration für das Modal (Icons & Farben)
@@ -30,12 +30,24 @@ const EntryPage: React.FC = () => {
   const { settings, updateSettings } = useSettings();
   const { getLogForDate, saveDailyLog } = useDailyLogs();
   
+  // Peer Review Hooks (Wiederhergestellt)
+  const installers = useInstallers();
+  const { reviews: pendingReviews, processReview } = usePeerReviews();
+
   // Nutzung von getLocalISOString statt UTC
   const [date, setDate] = useState(getLocalISOString());
   const [client, setClient] = useState('');
   const [hours, setHours] = useState('');
   const [note, setNote] = useState('');
   
+  // NEU: State für verantwortlichen Monteur
+  const [responsibleUserId, setResponsibleUserId] = useState('');
+  const [showInstallerMenu, setShowInstallerMenu] = useState(false); // Dropdown State
+
+  // NEU: State für Review-Ablehnung
+  const [rejectingEntryId, setRejectingEntryId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+
   const [entryType, setEntryType] = useState<EntryType>('work');
   
   // New fields for start/end logic
@@ -95,8 +107,6 @@ const EntryPage: React.FC = () => {
           setProjectStartTime('');
           setProjectEndTime('');
       } else {
-          // Keep existing inputs if switching between work types, or clear if coming from absence? 
-          // Let's clear to be safe if switching back to work from absence
            if (['vacation', 'sick', 'holiday', 'unpaid'].includes(entryType)) {
                setHours('');
            }
@@ -401,7 +411,8 @@ const EntryPage: React.FC = () => {
             start_time: projectStartTime || undefined,
             end_time: projectEndTime || undefined,
             note: note || undefined,
-            type: entryType as any
+            type: entryType as any,
+            responsible_user_id: responsibleUserId || undefined // Sende Monteur ID mit
         });
     }
 
@@ -416,6 +427,7 @@ const EntryPage: React.FC = () => {
     setHours('');
     setNote(''); 
     setProjectEndTime('');
+    setResponsibleUserId(''); // Reset
     setIsSubmitting(false);
   };
 
@@ -487,6 +499,76 @@ const EntryPage: React.FC = () => {
         <p className="text-white/50 text-sm md:text-lg mt-1">Erfasse deine Arbeitszeit schnell und einfach.</p>
       </header>
 
+      {/* --- NEU: EINGEHENDE BESTÄTIGUNGEN --- */}
+      {pendingReviews.length > 0 && (
+          <div className="mb-6 w-full max-w-5xl mx-auto animate-in slide-in-from-top-4 duration-300">
+              <GlassCard className="!border-orange-500/30 bg-orange-900/10 !p-4">
+                  <div className="flex items-center gap-2 text-orange-400 font-bold uppercase text-xs tracking-wider mb-3">
+                      <AlertCircle size={16} /> Mitarbeiter-Bestätigungen ausstehend ({pendingReviews.length})
+                  </div>
+                  <div className="space-y-2">
+                      {pendingReviews.map(review => {
+                          // Finde den Namen des Mitarbeiters
+                          const requester = installers.find(u => u.user_id === review.user_id);
+                          
+                          return (
+                              <div key={review.id} className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-2">
+                                  <div className="flex justify-between items-start">
+                                      <div>
+                                          {/* ANZEIGE DES MITARBEITER-NAMENS */}
+                                          <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-[10px] uppercase font-bold text-teal-400 bg-teal-900/20 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                                  <User size={10} /> {requester?.display_name || 'Unbekannt'}
+                                              </span>
+                                          </div>
+                                          <div className="font-bold text-white text-sm">{review.client_name}</div>
+                                          <div className="text-xs text-white/50">{new Date(review.date).toLocaleDateString('de-DE')} • {review.hours.toFixed(2)}h</div>
+                                          {review.note && <div className="text-xs text-white/40 italic mt-1">"{review.note}"</div>}
+                                      </div>
+                                      <div className="flex gap-2">
+                                          <button 
+                                            onClick={() => setRejectingEntryId(review.id)}
+                                            className="p-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
+                                            title="Ablehnen"
+                                          >
+                                              <X size={16} />
+                                          </button>
+                                          <button 
+                                            onClick={() => processReview(review.id, 'confirm')}
+                                            className="p-2 bg-emerald-500/20 text-emerald-300 rounded-lg hover:bg-emerald-500/30 transition-colors"
+                                            title="Bestätigen"
+                                          >
+                                              <Check size={16} />
+                                          </button>
+                                      </div>
+                                  </div>
+                                  
+                                  {/* Reject Reason Input */}
+                                  {rejectingEntryId === review.id && (
+                                      <div className="mt-2 flex gap-2 animate-in fade-in">
+                                          <input 
+                                            type="text" 
+                                            placeholder="Grund für Ablehnung..." 
+                                            value={rejectionReason}
+                                            onChange={(e) => setRejectionReason(e.target.value)}
+                                            className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-red-500/50"
+                                          />
+                                          <button 
+                                            onClick={() => { processReview(review.id, 'reject', rejectionReason); setRejectingEntryId(null); setRejectionReason(''); }}
+                                            className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600"
+                                          >
+                                              Senden
+                                          </button>
+                                      </div>
+                                  )}
+                              </div>
+                          );
+                      })}
+                  </div>
+              </GlassCard>
+          </div>
+      )}
+
       <div className="flex flex-col md:grid md:grid-cols-12 gap-6 md:gap-8 items-start">
         
         {/* 1. DATUM */}
@@ -522,36 +604,78 @@ const EntryPage: React.FC = () => {
                     <div className="flex items-center space-x-3">
                         {getTypeIcon()}
                         <span className="font-semibold uppercase text-xs tracking-wider">
-                            {entryType === 'work' ? 'Kunde / Projekt' : entryType === 'overtime_reduction' ? 'Überstundenabbau' : entryType.charAt(0).toUpperCase() + entryType.slice(1)}
+                            {ENTRY_TYPES_CONFIG[entryType].label}
                         </span>
                     </div>
                 </div>
                 
-                <div className="relative z-50"> {/* Increased Z-Index here */}
-                    <GlassInput 
-                        type="text" 
-                        placeholder={entryType === 'overtime_reduction' ? "Bemerkung..." : "Z.B. Baustelle Müller..."}
-                        value={client}
-                        onChange={(e) => setClient(e.target.value)}
-                        required
-                        className={`h-12 md:h-14 md:text-lg pr-12 ${entryType !== 'work' ? 'text-white/90' : ''}`}
-                    />
-                    
-                    {/* Cycle Type Button with Long Press */}
-                    <button 
-                        type="button"
-                        onMouseDown={handleButtonDown}
-                        onMouseUp={handleButtonUp}
-                        onMouseLeave={handleButtonLeave}
-                        onTouchStart={handleButtonDown}
-                        onTouchEnd={handleButtonUp}
-                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors hover:bg-white/10`}
-                        title="Typ ändern (gedrückt halten für Menü)"
-                    >
-                        <Plus size={24} />
-                    </button>
+                <div className="relative z-50 flex gap-2"> {/* Increased Z-Index here */}
+                    <div className="relative flex-1">
+                        <GlassInput 
+                            type="text" 
+                            placeholder={entryType === 'overtime_reduction' ? "Bemerkung..." : "Z.B. Baustelle Müller..."}
+                            value={client}
+                            onChange={(e) => setClient(e.target.value)}
+                            required
+                            className={`h-12 md:h-14 md:text-lg pr-12 ${entryType !== 'work' ? 'text-white/90' : ''}`}
+                        />
+                        
+                        {/* Cycle Type Button with Long Press */}
+                        <button 
+                            type="button"
+                            onMouseDown={handleButtonDown}
+                            onMouseUp={handleButtonUp}
+                            onMouseLeave={handleButtonLeave}
+                            onTouchStart={handleButtonDown}
+                            onTouchEnd={handleButtonUp}
+                            className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors hover:bg-white/10`}
+                            title="Typ ändern (gedrückt halten für Menü)"
+                        >
+                            <Plus size={24} />
+                        </button>
+                    </div>
 
-                    {/* MODAL FOR LONG PRESS */}
+                    {/* MITARBEITER SELECT BUTTON (NEU) */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowInstallerMenu(!showInstallerMenu)}
+                            className={`h-12 md:h-14 w-12 md:w-14 rounded-xl border border-white/10 flex items-center justify-center transition-all ${responsibleUserId ? 'bg-teal-500/20 text-teal-300 border-teal-500/50' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}
+                        >
+                            {responsibleUserId ? <UserCheck size={20} /> : <UserPlus size={20} />}
+                        </button>
+
+                        {showInstallerMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowInstallerMenu(false)}/>
+                                <div className="absolute top-full right-0 mt-2 z-50 w-64 bg-gray-900/95 backdrop-blur-xl border border-white/20 rounded-xl p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                                    <div className="text-xs font-bold text-white/50 uppercase px-2 py-1 mb-1">Mitarbeiter bestätigen lassen</div>
+                                    <div className="max-h-48 overflow-y-auto">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setResponsibleUserId(''); setShowInstallerMenu(false); }}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 ${!responsibleUserId ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5'}`}
+                                        >
+                                            Keine Bestätigung (Standard)
+                                        </button>
+                                        {installers.filter(i => i.user_id !== settings.user_id).map(installer => (
+                                            <button
+                                                key={installer.user_id}
+                                                type="button"
+                                                onClick={() => { setResponsibleUserId(installer.user_id!); setShowInstallerMenu(false); }}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between ${responsibleUserId === installer.user_id ? 'bg-teal-500/20 text-teal-300' : 'text-white/70 hover:bg-white/5'}`}
+                                            >
+                                                {installer.display_name}
+                                                {responsibleUserId === installer.user_id && <Check size={14}/>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* MODAL FOR LONG PRESS (TYPE SELECT) */}
                     {showTypeMenu && (
                          <>
                             <div className="fixed inset-0 z-40 bg-black/10" onClick={() => setShowTypeMenu(false)} />
@@ -652,7 +776,7 @@ const EntryPage: React.FC = () => {
                     disabled={isSubmitting} 
                     className={`h-14 md:h-16 text-lg shadow-xl font-bold tracking-wide ${getButtonGradient()}`}
                 >
-                    {isSubmitting ? 'Speichere...' : (entryType === 'break' ? 'Pause erfassen' : (entryType === 'overtime_reduction' ? 'Überstundenabbau buchen' : (['vacation','sick','holiday','unpaid'].includes(entryType) ? 'Abwesenheit eintragen' : 'Zeit erfassen')))}
+                    {isSubmitting ? 'Speichere...' : (entryType === 'break' ? 'Pause erfassen' : (entryType === 'overtime_reduction' ? 'Überstundenabbau buchen' : (['vacation','sick','holiday','unpaid'].includes(entryType) ? 'Abwesenheit eintragen' : (responsibleUserId ? 'Zeit zur Prüfung senden' : 'Zeit erfassen'))))}
                 </GlassButton>
             </div>
         </form>
