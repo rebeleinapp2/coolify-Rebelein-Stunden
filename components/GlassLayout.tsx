@@ -1,4 +1,5 @@
 import React, { ReactNode } from 'react';
+import SnowEffect from './SnowEffect';
 
 interface GlassLayoutProps {
   children: ReactNode;
@@ -21,6 +22,12 @@ const GlassLayout: React.FC<GlassLayoutProps> = ({ children }) => {
       <div className="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/40 rounded-full blur-[120px] animate-pulse-slow" />
       <div className="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-teal-600/40 rounded-full blur-[120px] animate-pulse-slow" style={{ animationDelay: '2s' }} />
       <div className="fixed top-[20%] right-[20%] w-[40%] h-[40%] bg-cyan-600/30 rounded-full blur-[100px] animate-pulse-slow" style={{ animationDelay: '4s' }} />
+
+      {/* 
+         WINTER SPECIAL: Schneefall-Effekt 
+         Um ihn nach dem Winter zu entfernen, lösche einfach die Zeile: <SnowEffect />
+      */}
+      <SnowEffect />
 
       {/* Main Content Container 
           REMOVED: transition-all duration-300 to fix fixed positioning context bugs on mobile
